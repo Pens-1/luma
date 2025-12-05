@@ -1,0 +1,24 @@
+# 環境変数（シークレット情報を含む）
+.env
+
+# n8nローカルデータ
+n8n/.n8n/
+.n8n/
+
+# Docker関連
+*.log
+
+# OS関連
+.DS_Store
+Thumbs.db
+
+# エディタ関連
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 一時ファイル
+*.tmp
+*.bak
