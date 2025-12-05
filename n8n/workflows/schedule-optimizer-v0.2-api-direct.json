@@ -1,5 +1,5 @@
 {
-  "name": "Schedule Optimizer v0.1",
+  "name": "Schedule Optimizer v0.2 (API Direct)",
   "nodes": [
     {
       "parameters": {
@@ -24,10 +24,8 @@
         "resource": "event",
         "operation": "getAll",
         "calendarId": {
-          "__rl": true,
-          "value": "primary",
           "mode": "list",
-          "cachedResultName": "primary"
+          "value": "primary"
         },
         "returnAll": false,
         "limit": 50,
@@ -62,35 +60,25 @@
     },
     {
       "parameters": {
-        "options": {}
-      },
-      "id": "gemini-chat-model",
-      "name": "Gemini 1.5 Flash",
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1,
-      "position": [850, 450],
-      "credentials": {
-        "googleGeminiOAuth2Api": {
-          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
-          "name": "Google Gemini API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "messages": {
-          "values": [
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
             {
-              "message": "=あなたは私の優秀なAIアシスタント「ジャービス」です。\\n以下のGoogleカレンダーの予定データを確認し、今日のスケジュールを分析してください。\\n\\n【今日の予定】\\n{{ $json.eventsText }}\\n\\n【指示】\\n1. 今日の確定している予定を時系列で整理してください。\\n2. 予定と予定の間の「空き時間（ギャップ）」を見つけ出し、その時間が何分あるか明記してください。\\n   - 30分未満: 短い休憩に最適\\n   - 30分～1時間: 軽いタスクや準備に使える\\n   - 1時間以上: 集中作業が可能\\n3. その空き時間に、エンジニアとしてのタスク（コードレビュー、ドキュメント作成、技術記事の執筆、学習、休憩など）を適宜提案してください。\\n4. エンジニアである私に対し、簡潔かつモチベーションが上がるような口調（敬語）で「今日の作戦」を提案してください。\\n\\n【出力形式】\\nMarkdown形式で以下の構成でお願いします：\\n\\n```\\n🌅 **今日の作戦 - {{ $now.toFormat('M月d日(ccc)') }}**\\n\\n📅 **確定している予定**\\n- (時系列で予定をリスト)\\n\\n⏰ **空き時間とおすすめタスク**\\n- (空き時間とタスク提案)\\n\\n💡 **今日のアドバイス**\\n(一言アドバイス)\\n```"
+              "name": "key",
+              "value": "={{ $env.GOOGLE_GEMINI_API_KEY }}"
             }
           ]
         },
-        "options": {}
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contents: [{\n    parts: [{\n      text: 'あなたは私の優秀なAIアシスタント「ジャービス」です。\\n以下のGoogleカレンダーの予定データを確認し、今日のスケジュールを分析してください。\\n\\n【今日の予定】\\n' + $json.eventsText + '\\n\\n【指示】\\n1. 今日の確定している予定を時系列で整理してください。\\n2. 予定と予定の間の「空き時間（ギャップ）」を見つけ出し、その時間が何分あるか明記してください。\\n   - 30分未満: 短い休憩に最適\\n   - 30分～1時間: 軽いタスクや準備に使える\\n   - 1時間以上: 集中作業が可能\\n3. その空き時間に、エンジニアとしてのタスク（コードレビュー、ドキュメント作成、技術記事の執筆、学習、休憩など）を適宜提案してください。\\n4. エンジニアである私に対し、簡潔かつモチベーションが上がるような口調（敬語）で「今日の作戦」を提案してください。\\n\\n【出力形式】\\nMarkdown形式で以下の構成でお願いします：\\n\\n```\\n🌅 **今日の作戦 - ' + $now.toFormat('M月d日(ccc)') + '**\\n\\n📅 **確定している予定**\\n- (時系列で予定をリスト)\\n\\n⏰ **空き時間とおすすめタスク**\\n- (空き時間とタスク提案)\\n\\n💡 **今日のアドバイス**\\n(一言アドバイス)\\n```'\n    }]\n  }]\n}) }}"
       },
-      "id": "ai-chain",
-      "name": "スケジュール分析",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.4,
+      "id": "gemini-api",
+      "name": "Gemini API (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
       "position": [850, 300]
     },
     {
@@ -99,8 +87,7 @@
         "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  embeds: [{\n    title: '🌅 今日の作戦',\n    description: $json.output,\n    color: 5814783,\n    footer: { text: 'Schedule Optimizer v0.1' },\n    timestamp: $now.toISO()\n  }]\n}) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify({\n  embeds: [{\n    title: '🌅 今日の作戦',\n    description: $json.candidates[0].content.parts[0].text,\n    color: 5814783,\n    footer: { text: 'Schedule Optimizer v0.1' },\n    timestamp: $now.toISO()\n  }]\n}) }}"
       },
       "id": "discord-webhook",
       "name": "Discordに通知",
@@ -136,25 +123,14 @@
       "main": [
         [
           {
-            "node": "スケジュール分析",
+            "node": "Gemini API (HTTP)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Gemini 1.5 Flash": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "スケジュール分析",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "スケジュール分析": {
+    "Gemini API (HTTP)": {
       "main": [
         [
           {
@@ -173,6 +149,6 @@
   "staticData": null,
   "tags": [],
   "triggerCount": 0,
-  "updatedAt": "2025-12-05T13:36:00.000Z",
+  "updatedAt": "2025-12-05T14:52:00.000Z",
   "versionId": "1"
 }
