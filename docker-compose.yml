@@ -26,6 +26,9 @@ services:
       
       # Slack Webhook URL（環境変数経由でn8nから参照可能）
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      
+      # Discord Webhook URL（環境変数経由でn8nから参照可能）
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
     
     volumes:
       # n8nのデータを永続化（ワークフロー、クレデンシャル等）

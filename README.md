@@ -9,14 +9,14 @@ Google カレンダーの予定を毎朝自動取得し、Gemini AI が空き時
 - 毎朝 8:00 に自動実行（Schedule Trigger）
 - Google カレンダーから今日の予定を取得
 - Gemini 1.5 Flash が空き時間を分析してタスクを提案
-- Slack に最適化された予定を通知
+- Discord（または Slack）に最適化された予定を通知
 
 ## 🛠 技術スタック
 
 - **n8n**: ワークフローオーケストレーション（Docker 環境）
 - **Google Gemini 1.5 Flash**: AI 分析エンジン（無料枠利用）
 - **Google Calendar API**: 予定データ取得
-- **Slack Incoming Webhook**: 通知先
+- **Discord Webhook**: 通知先（Slack も対応可能）
 
 ## 🚀 クイックスタート
 
@@ -50,7 +50,7 @@ n8n 管理画面で以下のクレデンシャルを設定します：
 
 1. **Google Calendar (OAuth2)** - [設定手順](docs/setup-google-api.md)
 2. **Google Gemini API** - [設定手順](docs/setup-gemini-api.md)
-3. **Slack Incoming Webhook** - Slack App から取得
+3. **Discord Webhook** - [設定手順](docs/setup-discord-webhook.md)（または Slack Incoming Webhook）
 
 ### 5. ワークフローのインポート
 
@@ -63,6 +63,7 @@ n8n 管理画面で以下のクレデンシャルを設定します：
 
 - [Google Calendar API 設定手順](docs/setup-google-api.md)
 - [Gemini API 設定手順](docs/setup-gemini-api.md)
+- [Discord Webhook 設定手順](docs/setup-discord-webhook.md)
 - [ワークフロー設計詳細](docs/workflow-design.md)
 
 ## 🔧 開発
