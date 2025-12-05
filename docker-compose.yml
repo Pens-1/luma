@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: schedule-optimizer-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # 基本設定
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE:-true}
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-Asia/Tokyo}
+      - TZ=${GENERIC_TIMEZONE:-Asia/Tokyo}
+      
+      # データ永続化設定
+      - N8N_USER_FOLDER=/home/node/.n8n
+      
+      # Webhook設定（ローカル開発用）
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      
+      # Google Gemini API設定（環境変数経由でn8nから参照可能）
+      - GOOGLE_GEMINI_API_KEY=${GOOGLE_GEMINI_API_KEY}
+      
+      # Slack Webhook URL（環境変数経由でn8nから参照可能）
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+    
+    volumes:
+      # n8nのデータを永続化（ワークフロー、クレデンシャル等）
+      - n8n_data:/home/node/.n8n
+      
+      # ワークフローのバックアップディレクトリ（オプション）
+      - ./n8n/workflows:/backup/workflows:ro
+    
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  n8n_data:
+    driver: local
