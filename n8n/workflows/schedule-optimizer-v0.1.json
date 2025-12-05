@@ -1,0 +1,184 @@
+{
+  "name": "Schedule Optimizer v0.1",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "毎朝8時に実行",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "event",
+        "operation": "getAll",
+        "calendarId": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "primary"
+        },
+        "returnAll": false,
+        "limit": 50,
+        "options": {
+          "timeMin": "={{ $now.startOf('day').toISO() }}",
+          "timeMax": "={{ $now.endOf('day').toISO() }}",
+          "orderBy": "startTime",
+          "singleEvents": true
+        }
+      },
+      "id": "google-calendar",
+      "name": "今日の予定を取得",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [450, 300],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Google Calendar"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// カレンダーデータを整形してGeminiに渡しやすい形式にする\nconst events = $input.all();\n\nif (events.length === 0) {\n  return [\n    {\n      json: {\n        eventsText: \"今日は予定がありません。1日を自由に使えます。\",\n        eventCount: 0,\n        rawEvents: []\n      }\n    }\n  ];\n}\n\n// イベントを時系列で整理\nconst formattedEvents = events.map(event => {\n  const start = event.json.start?.dateTime || event.json.start?.date;\n  const end = event.json.end?.dateTime || event.json.end?.date;\n  \n  return {\n    summary: event.json.summary || '(タイトルなし)',\n    start: start,\n    end: end,\n    location: event.json.location || '',\n    description: event.json.description || ''\n  };\n});\n\n// テキスト形式に変換\nconst eventsText = formattedEvents.map((e, i) => {\n  const startTime = new Date(e.start).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });\n  const endTime = new Date(e.end).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });\n  \n  return `${i + 1}. ${e.summary}\\n   時間: ${startTime} - ${endTime}\\n   場所: ${e.location || 'なし'}`;\n}).join('\\n\\n');\n\nreturn [\n  {\n    json: {\n      eventsText: eventsText,\n      eventCount: formattedEvents.length,\n      rawEvents: formattedEvents\n    }\n  }\n];"
+      },
+      "id": "format-data",
+      "name": "データ整形",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "gemini-chat-model",
+      "name": "Gemini 1.5 Flash",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [850, 450],
+      "credentials": {
+        "googleGeminiOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "messages": {
+          "values": [
+            {
+              "message": "=あなたは私の優秀なAIアシスタント「ジャービス」です。\\n以下のGoogleカレンダーの予定データを確認し、今日のスケジュールを分析してください。\\n\\n【今日の予定】\\n{{ $json.eventsText }}\\n\\n【指示】\\n1. 今日の確定している予定を時系列で整理してください。\\n2. 予定と予定の間の「空き時間（ギャップ）」を見つけ出し、その時間が何分あるか明記してください。\\n   - 30分未満: 短い休憩に最適\\n   - 30分～1時間: 軽いタスクや準備に使える\\n   - 1時間以上: 集中作業が可能\\n3. その空き時間に、エンジニアとしてのタスク（コードレビュー、ドキュメント作成、技術記事の執筆、学習、休憩など）を適宜提案してください。\\n4. エンジニアである私に対し、簡潔かつモチベーションが上がるような口調（敬語）で「今日の作戦」を提案してください。\\n\\n【出力形式】\\nSlackで読みやすいMarkdown形式で以下の構成でお願いします：\\n\\n```\\n🌅 *今日の作戦 - {{ $now.toFormat('M月d日(ccc)') }}*\\n\\n📅 *確定している予定*\\n- (時系列で予定をリスト)\\n\\n⏰ *空き時間とおすすめタスク*\\n- (空き時間とタスク提案)\\n\\n💡 *今日のアドバイス*\\n(一言アドバイス)\\n```"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ai-chain",
+      "name": "スケジュール分析",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.output }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "slack-webhook",
+      "name": "Slackに通知",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "毎朝8時に実行": {
+      "main": [
+        [
+          {
+            "node": "今日の予定を取得",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "今日の予定を取得": {
+      "main": [
+        [
+          {
+            "node": "データ整形",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "データ整形": {
+      "main": [
+        [
+          {
+            "node": "スケジュール分析",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 1.5 Flash": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "スケジュール分析",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "スケジュール分析": {
+      "main": [
+        [
+          {
+            "node": "Slackに通知",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-12-05T13:26:00.000Z",
+  "versionId": "1"
+}
