@@ -1,24 +1,31 @@
-# 環境変数（シークレット情報を含む）
+# Environment Variables
 .env
+.env.*
+! .env.example
 
-# n8nローカルデータ
-n8n/.n8n/
-.n8n/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
 
-# Docker関連
-*.log
+# Data
+n8n/credentials.json
+n8n/*.sqlite
+n8n/binaryData/
 
-# OS関連
-.DS_Store
-Thumbs.db
-
-# エディタ関連
+# IDE / Editor
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
+.DS_Store
 
-# 一時ファイル
-*.tmp
-*.bak
+# Logs
+*.log
+logs/
+
+# Build
+dist/
+build/
+*.egg-info/

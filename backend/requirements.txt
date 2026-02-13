@@ -13,6 +13,8 @@ sqlalchemy>=2.0.23
 # ユーティリティ
 python-dotenv>=1.0.0
 httpx>=0.25.0
+discord.py>=2.3.0
+google-generativeai>=0.3.0
 
 # テスト
 pytest>=7.4.0
