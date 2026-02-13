@@ -1,0 +1,361 @@
+{
+  "name": "LUMA Morning Scheduler",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "notes": "毎朝7:00 JSTに実行"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "today",
+              "name": "today",
+              "value": "={{ $now.format('yyyy-MM-dd') }}",
+              "type": "string"
+            },
+            {
+              "id": "work_start",
+              "name": "work_start",
+              "value": "09:00",
+              "type": "string"
+            },
+            {
+              "id": "work_end",
+              "name": "work_end",
+              "value": "22:00",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-variables",
+      "name": "Set Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list"
+        },
+        "options": {
+          "timeMin": "={{ $now.startOf('day').toISO() }}",
+          "timeMax": "={{ $now.endOf('day').toISO() }}",
+          "singleEvents": true
+        }
+      },
+      "id": "gcal-get-events",
+      "name": "GCal Get Events",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [440, -100],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar account"
+        }
+      },
+      "notes": "今日のイベントを取得"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "returnAll": true,
+        "filterType": "json",
+        "filterJson": "={{ JSON.stringify({\"filter\":{\"and\":[{\"property\":\"Status\",\"status\":{\"does_not_equal\":\"完了\"}},{\"or\":[{\"property\":\"Scheduled\",\"date\":{\"is_empty\":true}},{\"property\":\"Scheduled\",\"date\":{\"before\":$json.today}}]}]},\"sorts\":[{\"property\":\"Priority\",\"direction\":\"ascending\"},{\"property\":\"Deadline\",\"direction\":\"ascending\"}]}) }}"
+      },
+      "id": "notion-get-tasks",
+      "name": "Notion Get Tasks",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [440, 100],
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion account"
+        }
+      },
+      "notes": "未完了かつ未割当/過去割当のタスクを取得"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll"
+      },
+      "id": "merge",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// GCalイベントをfixed_events形式に変換\nconst gcalEvents = $input.first().json.data || [];\nconst fixed_events = gcalEvents\n  .filter(e => e.start?.dateTime) // 終日イベントを除外\n  .map(e => ({\n    id: e.id,\n    title: e.summary || 'No Title',\n    start: e.start.dateTime,\n    end: e.end.dateTime\n  }));\n\n// Notionタスクをtasks形式に変換\nconst notionPages = $input.last().json.data || [];\nconst priorityMap = { '高': 1, '中': 2, '低': 3 };\n\nconst tasks = notionPages.map(page => {\n  const props = page.properties || {};\n  return {\n    id: page.id,\n    title: props.Name?.title?.[0]?.plain_text || 'No Title',\n    priority: priorityMap[props.Priority?.select?.name] || 2,\n    duration_minutes: props.Duration?.number || 30,\n    deadline: props.Deadline?.date?.start || null,\n    category: props.Category?.select?.name || null,\n    gcalEventId: props['GCal Event ID']?.rich_text?.[0]?.plain_text || null\n  };\n});\n\nreturn {\n  json: {\n    fixed_events,\n    tasks,\n    work_start: $('Set Variables').item.json.work_start,\n    work_end: $('Set Variables').item.json.work_end\n  }\n};"
+      },
+      "id": "transform-data",
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 0],
+      "notes": "GCal/NotionデータをFastAPI形式に変換"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://fastapi:8000/api/v1/optimize/schedule",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}"
+      },
+      "id": "fastapi-optimize",
+      "name": "FastAPI Optimize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 0],
+      "notes": "OR-Toolsで最適化"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "status-check",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "success",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-success",
+      "name": "If Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1320, 0]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "loop-schedule",
+      "name": "Loop Schedule",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1540, -100],
+      "notes": "スケジュールを1件ずつ処理"
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list"
+        },
+        "start": "={{ $json.start }}",
+        "end": "={{ $json.end }}",
+        "additionalFields": {
+          "summary": "={{ $json.title }}",
+          "description": "LUMA自動スケジュール",
+          "colorId": "9"
+        }
+      },
+      "id": "gcal-create-event",
+      "name": "GCal Create Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [1760, -100],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar account"
+        }
+      },
+      "notes": "GCalに予定を作成"
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "update",
+        "pageId": "={{ $json.task_id }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Scheduled",
+              "dateValue": "={{ $json.start }}",
+              "dateEnd": "={{ $json.end }}"
+            },
+            {
+              "key": "GCal Event ID",
+              "richTextValue": "={{ $('GCal Create Event').item.json.id }}"
+            }
+          ]
+        }
+      },
+      "id": "notion-update-task",
+      "name": "Notion Update Task",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1980, -100],
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion account"
+        }
+      },
+      "notes": "NotionにScheduledとGCal Event IDを書き戻し"
+    },
+    {
+      "parameters": {
+        "jsCode": "const schedule = $('FastAPI Optimize').item.json.schedule || [];\nconst summary = $('FastAPI Optimize').item.json.summary || '';\nconst totalMinutes = $('FastAPI Optimize').item.json.total_work_minutes || 0;\n\nconst hours = Math.floor(totalMinutes / 60);\nconst mins = totalMinutes % 60;\nconst timeStr = hours > 0 ? `${hours}時間${mins}分` : `${mins}分`;\n\nconst scheduleText = schedule.map(s => {\n  const start = new Date(s.start).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });\n  const end = new Date(s.end).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });\n  const priority = s.priority === 1 ? '⭐' : '';\n  return `${start}-${end} ${s.title} ${priority}`;\n}).join('\\n');\n\nreturn {\n  json: {\n    embeds: [{\n      title: '📋 今日の戦略',\n      description: 'LUMA Schedulerが最適なスケジュールを作成しました',\n      color: 65280,\n      fields: [\n        { name: '📊 タスク数', value: `${schedule.length}件`, inline: true },\n        { name: '⏱️ 総作業時間', value: timeStr, inline: true },\n        { name: '🎯 本日のスケジュール', value: scheduleText || 'タスクなし' }\n      ],\n      footer: { text: 'LUMA Scheduler v0.1.0' },\n      timestamp: new Date().toISOString()\n    }]\n  }\n};"
+      },
+      "id": "format-discord",
+      "name": "Format Discord Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, -100],
+      "notes": "Discord用のEmbedメッセージを作成"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}"
+      },
+      "id": "discord-webhook",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2420, -100],
+      "notes": "Discord Webhook URLを設定してください"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embeds: [{ title: '❌ スケジュール作成失敗', description: $json.summary || 'エラーが発生しました', color: 16711680 }] }) }}"
+      },
+      "id": "discord-error",
+      "name": "Discord Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 100],
+      "notes": "エラー時の通知（Discord Webhook URLを設定）"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [{ "node": "Set Variables", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set Variables": {
+      "main": [
+        [
+          { "node": "GCal Get Events", "type": "main", "index": 0 },
+          { "node": "Notion Get Tasks", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "GCal Get Events": {
+      "main": [
+        [{ "node": "Merge", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notion Get Tasks": {
+      "main": [
+        [{ "node": "Merge", "type": "main", "index": 1 }]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [{ "node": "Transform Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transform Data": {
+      "main": [
+        [{ "node": "FastAPI Optimize", "type": "main", "index": 0 }]
+      ]
+    },
+    "FastAPI Optimize": {
+      "main": [
+        [{ "node": "If Success", "type": "main", "index": 0 }]
+      ]
+    },
+    "If Success": {
+      "main": [
+        [{ "node": "Loop Schedule", "type": "main", "index": 0 }],
+        [{ "node": "Discord Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Loop Schedule": {
+      "main": [
+        [{ "node": "GCal Create Event", "type": "main", "index": 0 }],
+        [{ "node": "Format Discord Message", "type": "main", "index": 0 }]
+      ]
+    },
+    "GCal Create Event": {
+      "main": [
+        [{ "node": "Notion Update Task", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notion Update Task": {
+      "main": [
+        [{ "node": "Loop Schedule", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Discord Message": {
+      "main": [
+        [{ "node": "Discord Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": [
+    { "name": "LUMA", "id": "luma-tag" }
+  ]
+}

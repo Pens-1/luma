@@ -1,0 +1,122 @@
+{
+  "name": "Test: Notion Todo取得",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": "={{ $env.NOTION_TODO_DATABASE_ID }}",
+        "returnAll": false,
+        "limit": 100,
+        "options": {
+          "filter": {
+            "filters": [
+              {
+                "key": "Status",
+                "condition": "equals",
+                "returnType": "select",
+                "value": "未着手"
+              }
+            ]
+          },
+          "sort": {
+            "sortValue": [
+              {
+                "key": "Priority",
+                "direction": "descending",
+                "timestamp": false
+              }
+            ]
+          }
+        }
+      },
+      "id": "notion-get-todos",
+      "name": "Todoを取得",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Notion DBから取得したTodoを整形\nconst todos = $input.all();\n\nif (todos.length === 0) {\n  return [\n    {\n      json: {\n        message: \"未着手のTodoはありません\",\n        count: 0,\n        todos: []\n      }\n    }\n  ];\n}\n\n// Todoを整形\nconst formattedTodos = todos.map(item => {\n  const properties = item.json.properties;\n  \n  return {\n    title: properties.Name?.title?.[0]?.plain_text || '(タイトルなし)',\n    status: properties.Status?.select?.name || '',\n    priority: properties.Priority?.select?.name || '',\n    dueDate: properties['Due Date']?.date?.start || null,\n    tags: properties.Tags?.multi_select?.map(t => t.name) || [],\n    url: item.json.url\n  };\n});\n\nreturn [\n  {\n    json: {\n      message: `未着手のTodoが${formattedTodos.length}件あります`,\n      count: formattedTodos.length,\n      todos: formattedTodos\n    }\n  }\n];"
+      },
+      "id": "format-todos",
+      "name": "データ整形",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  embeds: [{\n    title: '📝 未着手のTodo一覧',\n    description: $json.message,\n    color: 3447003,\n    fields: $json.todos.slice(0, 10).map(todo => ({\n      name: todo.title,\n      value: `優先度: ${todo.priority || 'なし'} | 期限: ${todo.dueDate || 'なし'}`,\n      inline: false\n    })),\n    footer: { text: `全${$json.count}件のTodo` },\n    timestamp: $now.toISO()\n  }]\n}) }}"
+      },
+      "id": "discord-notification",
+      "name": "Discordに通知",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Todoを取得",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Todoを取得": {
+      "main": [
+        [
+          {
+            "node": "データ整形",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "データ整形": {
+      "main": [
+        [
+          {
+            "node": "Discordに通知",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-12-06T00:35:00.000Z",
+  "versionId": "1"
+}

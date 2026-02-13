@@ -10,13 +10,15 @@ Google カレンダーの予定を毎朝自動取得し、Gemini AI が空き時
 - Google カレンダーから今日の予定を取得
 - Gemini 1.5 Flash が空き時間を分析してタスクを提案
 - Discord（または Slack）に最適化された予定を通知
+- Notion DB から未着手の Todo を取得
 
 ## 🛠 技術スタック
 
 - **n8n**: ワークフローオーケストレーション（Docker 環境）
 - **Google Gemini 1.5 Flash**: AI 分析エンジン（無料枠利用）
-- **Google Calendar API**: 予定データ取得
-- **Discord Webhook**: 通知先（Slack も対応可能）
+- **Google Gemini API**: AI による予定分析とタスク提案
+- **Discord Webhook**: 通知配信
+- **Notion API**: Todo データベースとの連携先（Slack も対応可能）
 
 ## 🚀 クイックスタート
 
@@ -44,13 +46,14 @@ docker-compose up -d
 
 n8n が起動したら、ブラウザで `http://localhost:5678` にアクセスします。
 
-### 4. クレデンシャル設定
+### 4. クレデンシャルの設定
 
-n8n 管理画面で以下のクレデンシャルを設定します：
+n8n の管理画面（`http://localhost:5678`）から以下を設定：
 
-1. **Google Calendar (OAuth2)** - [設定手順](docs/setup-google-api.md)
-2. **Google Gemini API** - [設定手順](docs/setup-gemini-api.md)
-3. **Discord Webhook** - [設定手順](docs/setup-discord-webhook.md)（または Slack Incoming Webhook）
+- **Google Calendar**: OAuth2 認証（[設定ガイド](docs/setup-google-api.md)）
+- **Gemini API**: API キー入力
+- **Discord Webhook**: Webhook URL 入力
+- **Notion API**: Integration Secret 入力（[設定ガイド](docs/setup-notion-api.md)）
 
 ### 5. ワークフローのインポート
 
@@ -61,10 +64,11 @@ n8n 管理画面で以下のクレデンシャルを設定します：
 
 ## 📚 ドキュメント
 
-- [Google Calendar API 設定手順](docs/setup-google-api.md)
-- [Gemini API 設定手順](docs/setup-gemini-api.md)
-- [Discord Webhook 設定手順](docs/setup-discord-webhook.md)
-- [ワークフロー設計詳細](docs/workflow-design.md)
+- [Google Calendar API 設定ガイド](docs/setup-google-api.md)
+- [Gemini API 設定ガイド](docs/setup-gemini-api.md)
+- [Discord Webhook 設定ガイド](docs/setup-discord-webhook.md)
+- [Notion API 設定ガイド](docs/setup-notion-api.md)
+- [ワークフロー設計ドキュメント](docs/workflow-design.md)
 
 ## 🔧 開発
 
