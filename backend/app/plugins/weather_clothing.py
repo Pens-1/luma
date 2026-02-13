@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 import httpx
-from typing import Optional
+from typing import Optional, Dict
 
 router = APIRouter(
     prefix="/weather-clothing",
@@ -15,19 +15,39 @@ async def get_weather(lat: float, lon: float):
         response.raise_for_status()
         return response.json()
 
-def suggest_clothing(max_temp: float, min_temp: float, weather_code: int) -> str:
+def suggest_clothing(max_temp: float, min_temp: float, weather_code: int) -> Dict[str, any]:
     advice = ""
-    if max_temp >= 25: advice = "半袖で快適に過ごせます。"
-    elif max_temp >= 20: advice = "長袖シャツや薄手のカーディガンがおすすめです。"
-    elif max_temp >= 15: advice = "セーターやトレンチコートが必要な涼しさです。"
-    elif max_temp >= 10: advice = "冬物のコートや厚手のジャケットを準備しましょう。"
-    else: advice = "ダウンジャケットやマフラーなど、しっかりした防寒が必要です。"
+    umbrella_needed = False
 
+    # 降雨の天気コードを定義
+    rain_weather_codes = {51, 53, 55, 61, 63, 65, 80, 81, 82}
+    if weather_code in rain_weather_codes:
+        umbrella_needed = True
+
+    # 服装のアドバイスを温度ごとに詳細化
+    if max_temp >= 25:
+        advice = "半袖、短パン、サンダルで快適に過ごせます。日焼け止めを忘れずに。"
+    elif max_temp >= 20:
+        advice = "長袖シャツや薄手のカーディガン、ジーンズやスラックスがおすすめです。"
+    elif max_temp >= 15:
+        advice = "セーター、トレンチコート、長ズボンを着用しましょう。"
+    elif max_temp >= 10:
+        advice = "厚手のセーター、ダウンジャケット、防風ジャケット、長靴を準備しましょう。"
+    else:
+        advice = "ダウンジャケット、マフラー、手袋、厚手の靴下、防寒着をしっかり用意しましょう。"
+
+    # 朝晩の温度差がある場合のアドバイス
     if min_temp < 10 and max_temp > 15:
         advice += " 朝晩は冷え込むので、脱ぎ着しやすい上着を持ち歩きましょう。"
-    if weather_code in [51, 53, 55, 61, 63, 65, 80, 81, 82]:
-        advice += " 雨の予報があるため、傘を忘れずに。"
-    return advice
+
+    # 降雨がある場合のアドバイス
+    if umbrella_needed:
+        advice += " 雨の予報があるため、傘を忘れずに。防水素材の服や靴をおすすめします。"
+
+    return {
+        "suggestion": advice,
+        "umbrella_needed": umbrella_needed
+    }
 
 @router.get("/")
 async def get_weather_and_clothing(
@@ -51,7 +71,7 @@ async def get_weather_and_clothing(
         weather_code = daily["weathercode"][day_index]
         date = daily["time"][day_index]
         
-        advice = suggest_clothing(max_temp, min_temp, weather_code)
+        clothing_advice = suggest_clothing(max_temp, min_temp, weather_code)
         
         return {
             "date": date,
@@ -61,7 +81,8 @@ async def get_weather_and_clothing(
                 "min_temp": min_temp,
                 "weather_code": weather_code
             },
-            "suggestion": advice
+            "suggestion": clothing_advice["suggestion"],
+            "umbrella_needed": clothing_advice["umbrella_needed"]
         }
     except Exception as e:
         return {"error": f"天気情報の取得に失敗しました: {str(e)}"}
