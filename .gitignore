@@ -29,3 +29,8 @@ logs/
 dist/
 build/
 *.egg-info/
+
+# Sensitive files (webhooks, secrets)
+*webhook*.py
+*secret*.py
+credentials.json
