@@ -67,14 +67,15 @@ services:
     env_file: .env
     environment:
       - REDIS_URL=redis://:redis_password@redis:6379
-      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_URL=http://lucid_solomon:11434
     volumes:
       - ./shared:/app/shared:ro
+      - ./services/evaluator_service/logs:/app/logs
     depends_on:
       redis:
         condition: service_healthy
-      ollama:
-        condition: service_started
+    networks:
+      - default
 
   luma-aider-service:
     build: ./services/aider_service
@@ -85,16 +86,16 @@ services:
     env_file: .env
     environment:
       - REDIS_URL=redis://:redis_password@redis:6379
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_API_BASE=http://ollama:11434
+      - OLLAMA_URL=http://lucid_solomon:11434
+      - OLLAMA_API_BASE=http://lucid_solomon:11434
     volumes:
       - ./shared:/app/shared:ro
       - ./services/fast_service:/workspace:rw  # Aider修正対象
     depends_on:
       redis:
         condition: service_healthy
-      ollama:
-        condition: service_started
+    networks:
+      - default
 
 volumes:
   redis_data:
