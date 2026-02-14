@@ -33,7 +33,7 @@ from tools import notion, weather
 
 
 # 設定
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3-coder:30b")  # 30Bモデルを使用
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")  # 7Bモデルに変更（速度重視）
 redis_client = RedisClient()
 ollama_client = OllamaClient(os.getenv("OLLAMA_URL", "http://ollama:11434"))
 
