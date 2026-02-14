@@ -4,7 +4,20 @@ OllamaとのREST API通信を担当
 """
 import httpx
 import json
+import logging
+from datetime import datetime
 from typing import List, Dict, Any, Optional
+
+# エラーログ設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/app/logs/ollama_errors.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 
 class OllamaClient:
@@ -56,9 +69,15 @@ class OllamaClient:
                 
                 return content
             
-            except httpx.TimeoutException:
-                return "❌ Ollama timeout (120s exceeded)"
+            except httpx.TimeoutException as e:
+                error_msg = f"❌ Ollama timeout (120s exceeded) - Model: {model}"
+                logger.error(f"Timeout error: {error_msg}")
+                return error_msg
             except httpx.HTTPStatusError as e:
-                return f"❌ Ollama HTTP error: {e.response.status_code}"
+                error_msg = f"❌ Ollama HTTP error: {e.response.status_code}"
+                logger.error(f"HTTP error: {error_msg} - URL: {self.chat_url} - Model: {model} - Response: {e.response.text[:200]}")
+                return error_msg
             except Exception as e:
-                return f"❌ Ollama error: {str(e)}"
+                error_msg = f"❌ Ollama error: {str(e)}"
+                logger.error(f"Unexpected error: {error_msg} - Model: {model}")
+                return error_msg

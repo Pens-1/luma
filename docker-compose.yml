@@ -18,26 +18,10 @@ services:
       timeout: 5s
       retries: 5
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: luma-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    environment:
-      - OLLAMA_HOST=0.0.0.0
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
   # ==================================================
   # LUMA マイクロサービス群
+  # 既存のlucid_solomonコンテナ（Ollama）を使用
+  # ==================================================
   # ==================================================
 
   luma-discord-bot:
@@ -58,22 +42,21 @@ services:
     build: ./services/fast_service
     container_name: luma-fast-service
     restart: unless-stopped
-    ports:
-      - "8002:8002"
     env_file: .env
     environment:
       - REDIS_URL=redis://:redis_password@redis:6379
-      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_URL=http://lucid_solomon:11434
       - NOTION_API_KEY=${NOTION_API_KEY}
-      - NOTION_DATABASE_ID=${NOTION_TODO_DATABASE_ID}
+      - NOTION_DATABASE_ID=${NOTION_DATABASE_ID}
       - WEATHER_API_KEY=${WEATHER_API_KEY}
     volumes:
       - ./shared:/app/shared:ro
+      - ./services/fast_service/logs:/app/logs
     depends_on:
       redis:
         condition: service_healthy
-      ollama:
-        condition: service_started
+    networks:
+      - default
 
   luma-evaluator-service:
     build: ./services/evaluator_service

@@ -7,7 +7,19 @@ import sys
 import os
 import uuid
 import re
+import logging
 from datetime import datetime
+
+# エラーログ設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/app/logs/fast_service_errors.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # 共有ライブラリをインポート
 sys.path.append("/app/shared")
@@ -21,7 +33,7 @@ from tools import notion, weather
 
 
 # 設定
-OLLAMA_MODEL = "qwen3-coder:30b"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")  # 軽量モデルに変更
 redis_client = RedisClient()
 ollama_client = OllamaClient(os.getenv("OLLAMA_URL", "http://ollama:11434"))
 
@@ -208,7 +220,9 @@ async def main():
         try:
             await handle_user_message(message)
         except Exception as e:
-            print(f"❌ Error handling message: {e}")
+            error_msg = f"❌ Error handling message: {e}"
+            print(error_msg)
+            logger.error(f"Message handling error: {error_msg} - Message: {message}")
             # エラー時もユーザーに通知
             if "channel_id" in message:
                 await send_to_user(
