@@ -13,7 +13,9 @@ class LLMEvaluator:
     def __init__(self, ollama_url: str):
         self.ollama_url = ollama_url
         self.chat_url = f"{ollama_url}/api/chat"
-        self.model = "qwen3-coder:30b"
+        import os
+        self.model = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+        print(f"🧠 Evaluator Model initialized: {self.model}")
     
     async def evaluate(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """

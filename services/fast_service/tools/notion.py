@@ -7,8 +7,8 @@ import os
 from typing import Dict, Any, Optional
 
 
-NOTION_API_KEY = os.getenv("NOTION_API_KEY")
-NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
+NOTION_API_KEY = os.getenv("NOTION_API_KEY") or os.getenv("NOTION_API_SECRET")
+NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID") or os.getenv("NOTION_TODO_DATABASE_ID")
 
 HEADERS = {
     "Authorization": f"Bearer {NOTION_API_KEY}",

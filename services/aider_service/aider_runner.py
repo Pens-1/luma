@@ -36,7 +36,7 @@ class AiderRunner:
         # Aiderコマンド構築
         cmd = [
             "aider",
-            "--model", "ollama/qwen3-coder:30b",
+            "--model", f"ollama/{os.getenv('OLLAMA_MODEL', 'qwen2.5-coder:7b')}",
             "--yes",  # 自動承認
             "--no-auto-commits",  # コミットは手動で
             "--message", instruction
