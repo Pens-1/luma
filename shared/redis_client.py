@@ -39,7 +39,12 @@ class RedisClient:
         await client.publish(channel, json.dumps(message, ensure_ascii=False))
     
     async def subscribe(self, *channels: str) -> AsyncIterator[Dict[str, Any]]:
-        """チャンネルを購読してメッセージを受信"""
+        """チャンネルを購読してメッセージを受信（後方互換性あり）"""
+        async for msg in self.subscribe_with_channel(*channels):
+            yield msg["data"]
+            
+    async def subscribe_with_channel(self, *channels: str) -> AsyncIterator[Dict[str, Any]]:
+        """チャンネル名と共にメッセージを受信"""
         client = await self.connect()
         pubsub = client.pubsub()
         await pubsub.subscribe(*channels)
@@ -48,7 +53,10 @@ class RedisClient:
             if message["type"] == "message":
                 try:
                     data = json.loads(message["data"])
-                    yield data
+                    yield {
+                        "channel": message["channel"],
+                        "data": data
+                    }
                 except json.JSONDecodeError:
                     print(f"⚠️ Invalid JSON: {message['data']}")
                     continue

@@ -10,3 +10,12 @@
 
 # 2026-02-13 23:28:00.600744
 +backend/app/bot.py を修正してください。ユーザーが『明日』などの相対的な日付を言った際に Gemini が正しく判断できるよう、SYSTEM_PROMPT に現在の日付を動的に含めるロジックを追加してください。具体的には、chat.send_message する直前で datetime.date.today() を取得し、それをプロンプトの冒頭に『今日は 2026-02-13 です』のように記述するようにコードを書き換えてください。これにより [ACTION:WEATHER:1] などのタグが正確に生成されるようにします。
+
+# 2026-02-15 15:35:48.331239
++Implement the get_forecast function in services/fast_service/tools/forecast.py. Use Open-Meteo API (https://api.open-meteo.com/v1/forecast?latitude=35.6895&longitude=139.6917&daily=temperature_2m_max,weathercode&timezone=Asia%2FTokyo) to fetch forecast data. The function should return a dict with city and forecast list.
+
+# 2026-02-15 15:36:10.902941
++Fix get_forecast in services/fast_service/tools/forecast.py. It should only take 'city' as an argument to match the tests. Implement a simple city-to-coords lookup (e.g. for Tokyo) or use a geocoding logic so the existing tests in services/fast_service/tests/test_forecast.py pass. Run the tests and ensure they all pass.
+
+# 2026-02-15 15:39:04.880059
++Implement get_forecast in services/fast_service/tools/forecast.py to pass the tests in services/fast_service/tests/test_forecast.py. Use requests to fetch data from Open-Meteo.

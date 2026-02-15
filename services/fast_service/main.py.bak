@@ -1,0 +1,291 @@
+"""
+Fast Service - API Server
+ユーザーとの対話、ツール実行、Evaluator/Aider連携を担当するAPIサーバー
+"""
+import sys
+import os
+import uuid
+import re
+import logging
+from datetime import datetime
+from typing import List, Optional, Dict, Any
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from pydantic import BaseModel
+
+# 共有ライブラリをインポート
+if os.path.exists("/app/shared"):
+    sys.path.append("/app/shared")
+else:
+    shared_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../shared"))
+    sys.path.append(shared_path)
+
+from redis_client import RedisClient
+from message_schemas import UserMessage, BotResponse, EvaluationRequest, EvaluationResponse, AiderRequest, BotReaction
+from utils import format_result
+
+# Fast Service固有のモジュール
+from ollama_client import OllamaClient
+from tools import weather, forecast
+# from tools import notion  # Disabled
+
+# ロガー設定
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# 設定
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
+
+# グローバルインスタンス
+redis_client = RedisClient()
+ollama_client = OllamaClient(OLLAMA_URL)
+
+SYSTEM_PROMPT = f"""
+あなたはAI自律エンジニア「LUMA（ルーマ）」です。
+現在日時: {datetime.now().strftime("%Y年%m月%d日 (%A) %H:%M")}
+
+【役割】
+ユーザーの良きパートナーとして、タスク管理と開発サポートを行います。
+丁寧で親しみやすい日本語で話してください。
+
+【アクションタグ】
+ツールを使用する場合のみ、以下のタグを最後に出力してください（会話と併用可）。
+- [ACTION:WEATHER:日数] : 天気確認 (例: [ACTION:WEATHER:0] 今日)
+- [ACTION:FORECAST:都市名] : 詳細な天気予報を取得 (例: [ACTION:FORECAST:Tokyo])
+
+【判断基準】
+- ユーザーが明確に「天気教えて」等の指示をした場合 → アクションタグを出力
+- 詳しい天気や数日間の予報を知りたい場合 → FORECASTを使用
+- 挨拶、質問、機能の説明、雑談の場合 → アクションタグは**使用しない**
+- Notionやタスク管理に関する質問には「現在、タスク管理機能は無効化されています」と答えること。
+
+【会話例】
+User: こんにちは
+LUMA: こんにちは！今日はどんなお手伝いをしましょうか？
+
+User: 東京の詳しい天気予報を教えて
+LUMA: 了解しました！東京の天気予報を調べますね。
+[ACTION:FORECAST:Tokyo]
+"""
+
+# API モデル定義
+class ChatRequest(BaseModel):
+    user_id: str
+    username: str
+    content: str
+    channel_id: str
+    message_id: str
+
+class ChatResponse(BaseModel):
+    content: str
+    reactions: List[str] = []
+
+class ToolInfo(BaseModel):
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 起動時
+    print(f"🚀 Fast Service API starting... Model: {OLLAMA_MODEL}")
+    yield
+    # 終了時
+    print("👋 Fast Service API stopping...")
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "luma-fast-service", "model": OLLAMA_MODEL}
+
+
+@app.get("/tools", response_model=List[ToolInfo])
+async def get_tools():
+    """利用可能なツール一覧を返す"""
+    # 将来的にはツールクラスから動的に生成する
+    return [
+        ToolInfo(
+            name="weather",
+            description="指定した日数の天気を取得",
+            parameters={"day_index": "int (0=今日, 1=明日...)"}
+        ),
+        ToolInfo(
+            name="forecast",
+            description="指定した都市の詳細な天気予報を取得",
+            parameters={"city": "str (English city name)"}
+        ),
+        # Notion is disabled
+    ]
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat_endpoint(request: ChatRequest):
+    """
+    チャットエンドポイント
+    Discord Botから直接呼び出される
+    """
+    print(f"📨 API Received from {request.username}: {request.content[:50]}...")
+    
+    # 処理実行
+    # 注: HTTPレスポンスで返すため、Redisへのpublishは行わない（Evaluator/Aider連携除く）
+    # リアクションはレスポンスに含める
+    
+    reactions = ["👀"] # 受信確認
+    final_content = ""
+    
+    try:
+        # Ollamaで思考
+        response_text = await ollama_client.chat(
+            model=OLLAMA_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": request.content}
+            ],
+            temperature=0.5
+        )
+        
+        # アクション処理
+        if "[ACTION:NOTION:" in response_text or "[ACTION:NOTION_CREATE:" in response_text:
+             reactions.append("🚫")
+             final_content = "現在、Notion連携機能は一時的に無効化されています。"
+             
+        elif "[ACTION:WEATHER:" in response_text:
+            reactions.append("☀️")
+            match = re.search(r"\[ACTION:WEATHER:(\d+)\]", response_text)
+            if match:
+                day_index = int(match.group(1))
+                result = await weather.get_weather(day_index)
+                final_content = f"{result['day']}の天気: {result['weather']}\n{result['temperature']}\n{result.get('note', '')}"
+                reactions.append("✅")
+            else:
+                 final_content = "❌ 天気情報の形式が不正です"
+                 reactions.append("❌")
+
+        elif "[ACTION:FORECAST:" in response_text:
+            reactions.append("🌡️")
+            match = re.search(r"\[ACTION:FORECAST:([^\]]+)\]", response_text)
+            if match:
+                city = match.group(1).strip()
+                # ユーザーには「調べています...」と返したいが、APIなので結果だけ返す
+                try:
+                    result = forecast.get_forecast(city)
+                    if "error" in result:
+                        final_content = f"❌ {result['error']}"
+                        reactions.append("❌")
+                    else:
+                        lines = [f"📊 {result['city']}の天気予報:"]
+                        for entry in result['forecast']:
+                            lines.append(f"- {entry['date']}: {entry['temperature']}°C")
+                        final_content = "\n".join(lines)
+                        reactions.append("✅")
+                except Exception as e:
+                    final_content = f"❌ エラーが発生しました: {str(e)}"
+                    reactions.append("❌")
+            else:
+                final_content = "❌ 都市名の指定が不正です"
+                reactions.append("❌")
+
+        else:
+            # 通常応答
+            final_content = response_text
+            reactions.append("✅")
+
+        return ChatResponse(content=final_content, reactions=reactions)
+
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {e}")
+        return ChatResponse(content=f"❌ 内部エラーが発生しました: {str(e)}", reactions=["❌"])
+
+
+# --- 以下、Evaluator/Aider連携用 ---
+# API化に伴い、Evaluator/Aiderとの連携フローも見直す必要があるが、
+# 今回はユーザー指示により「FastAPI完結」を優先し、複雑なCallbackロジックは一旦省略するか、
+# 必要であればBackgroundTasksで回す。
+# とりあえずNotion連携（Evaluator対象）は無効化されているので、単純なレスポンスのみ実装。
+
+# These functions are kept as they are for now, as they interact with Redis for
+# internal services (Evaluator/Aider) as per the user's instruction.
+# They are not directly called by the /chat endpoint in its current state
+# because Notion integration (which would trigger Evaluator/Aider) is disabled.
+
+async def ask_evaluator(context: dict) -> dict:
+    """Evaluatorに評価依頼"""
+    request_id = str(uuid.uuid4())
+    
+    request = EvaluationRequest(
+        request_id=request_id,
+        context=context
+    )
+    
+    # 依頼を送信
+    await redis_client.publish("evaluator:request", request.model_dump())
+    
+    # 応答を待つ（タイムアウト10秒）
+    try:
+        # This part would need to be refactored if the API needs to wait for evaluator response
+        # and return it directly. For now, it's a fire-and-forget from the perspective
+        # of the original Redis-based flow.
+        # Since Notion is disabled, this function is not actively used in the /chat endpoint.
+        # Keeping it for future re-enablement of Notion or similar features.
+        logger.warning("ask_evaluator called, but its response handling is not integrated with FastAPI's direct response.")
+        return {"is_correct": True, "reason": "Evaluator response not awaited in FastAPI context"}
+    except Exception as e:
+        logger.error(f"Error in ask_evaluator: {e}")
+        return {"is_correct": False, "reason": f"Evaluator communication error: {str(e)}"}
+
+
+async def request_aider_fix(evaluation: dict):
+    """Aiderに修正依頼"""
+    aider_request = AiderRequest(
+        type="auto_fix",
+        target_file=evaluation.get("fix_target"),
+        instruction=evaluation.get("fix_instruction", "エラーを修正"),
+        context=evaluation
+    )
+    
+    await redis_client.publish("aider:requests", aider_request.model_dump())
+    logger.info(f"Aider fix request published: {aider_request.request_id}")
+
+
+async def stream_aider_progress(channel_id: str):
+    """Aiderの進捗をユーザーに流す"""
+    # This function would typically stream updates back to the user.
+    # In a FastAPI context, this would require a StreamingResponse or WebSockets.
+    # For now, it's kept as is, but its output won't directly reach the /chat caller.
+    logger.warning("stream_aider_progress called, but its output is not integrated with FastAPI's direct response.")
+    try:
+        # This part would need to be refactored for FastAPI streaming.
+        pass
+    except Exception as e:
+        logger.error(f"Error in stream_aider_progress: {e}")
+
+
+# The send_to_user and send_reaction functions are no longer used for the primary
+# chat response in the FastAPI /chat endpoint. They are retained because
+# ask_evaluator and stream_aider_progress (if they were to be fully integrated
+# and active) might still use them to publish to Redis for other components
+# (e.g., a separate Discord bot listener for these specific Redis channels).
+# However, for the direct /chat response, the content and reactions are returned
+# via the ChatResponse model.
+async def send_to_user(channel_id: str, content: str):
+    """ユーザーに応答を送信 (Redis経由, 主に内部サービス用)"""
+    response = BotResponse(channel_id=channel_id, content=content)
+    await redis_client.publish("output:user", response.model_dump())
+    logger.info(f"Published to output:user for channel {channel_id}")
+
+
+async def send_reaction(channel_id: str, message_id: str, emoji: str):
+    """リアクション指示を送信 (Redis経由, 主に内部サービス用)"""
+    reaction = BotReaction(channel_id=channel_id, message_id=message_id, emoji=emoji)
+    await redis_client.publish("bot:reaction", reaction.model_dump())
+    logger.info(f"Published reaction {emoji} for message {message_id} in channel {channel_id}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

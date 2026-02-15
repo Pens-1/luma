@@ -13,7 +13,15 @@ class UserMessage(BaseModel):
     username: str
     content: str
     channel_id: str
+    message_id: str
     timestamp: str
+
+
+class BotReaction(BaseModel):
+    """Botへのリアクション指示 (bot:reaction)"""
+    channel_id: str
+    message_id: str
+    emoji: str
 
 
 class BotResponse(BaseModel):

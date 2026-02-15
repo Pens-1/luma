@@ -52,7 +52,7 @@ class OllamaClient:
             "stream": False,
             "options": {
                 "temperature": temperature,
-                "num_ctx": 8192  # コンテキスト長を拡張
+                "num_ctx": 100000  # 100k token window requested by user
             }
         }
         
