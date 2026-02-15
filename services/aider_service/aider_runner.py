@@ -18,7 +18,8 @@ class AiderRunner:
     async def run_stream(
         self,
         target_file: Optional[str],
-        instruction: str
+        instruction: str,
+        test_command: Optional[str] = None
     ) -> AsyncIterator[str]:
         """
         Aiderをストリーミング実行
@@ -26,6 +27,7 @@ class AiderRunner:
         Args:
             target_file: 修正対象ファイル（Noneの場合は自動選択）
             instruction: 修正指示
+            test_command: 実行するテストコマンド（TDD用）
         
         Yields:
             Aiderの出力行（リアルタイム）
@@ -36,21 +38,37 @@ class AiderRunner:
         # Aiderコマンド構築
         cmd = [
             "aider",
-            "--model", f"ollama/{os.getenv('OLLAMA_MODEL', 'qwen2.5-coder:7b')}",
+            "--model", f"ollama/{os.getenv('OLLAMA_MODEL', 'qwen3-coder:30b')}",
             "--yes",  # 自動承認
             "--no-auto-commits",  # コミットは手動で
+            "--map-tokens", "1024",  # アーキテクチャマップを強化
             "--message", instruction
         ]
+
+        # テスト駆動開発 (TDD) のための設定
+        if test_command:
+            cmd.extend(["--test-cmd", test_command])
+        
+        # リンター設定
+        cmd.extend(["--lint-cmd", "flake8 --select=E9,F63,F7,F82 --show-source"])
+        
+        # Files to edit/read
+        # Always include main.py (to register tools) and the guide
+        cmd.extend(["main.py", "TOOL_CREATION_GUIDE.md"])
         
         if target_file:
             cmd.append(target_file)
         else:
-            # ファイル指定なしの場合、ワイルドカードで候補を渡す
-            cmd.extend(["tools/*.py", "*.py"])
+            # If no specific target, give it the whole tools directory so it sees existing patterns
+            cmd.append("tools")
         
         # 環境変数設定
         env = os.environ.copy()
         env["OLLAMA_API_BASE"] = self.ollama_url
+        # PYTHONPATHにワークスペースを追加して、テスト実行時のインポートエラーを防ぐ
+        env["PYTHONPATH"] = f"{self.workspace}:{env.get('PYTHONPATH', '')}"
+        
+        print(f"🚀 Running Aider CMD: {' '.join(cmd)}")
         
         # プロセス起動
         process = await asyncio.create_subprocess_exec(
@@ -83,21 +101,17 @@ class AiderRunner:
         
         if not os.path.exists(git_dir):
             print("🔧 Initializing Git repository...")
+            subprocess.run(["git", "init"], cwd=self.workspace, check=True)
+            subprocess.run(["git", "config", "user.email", "bot@luma.ai"], cwd=self.workspace, check=True)
+            subprocess.run(["git", "config", "user.name", "LUMA Bot"], cwd=self.workspace, check=True)
+
+        # Always ensure current state is committed so Aider sees a clean state
+        # EXCEPT for the file we want it to edit? No, Aider edits clean files too.
+        # But if main.py is dirty (modified by me), Aider might complain.
+        # Let's commit everything.
+        subprocess.run(["git", "add", "."], cwd=self.workspace, check=False)
+        subprocess.run(["git", "commit", "-m", "Auto sync before run", "--allow-empty"], cwd=self.workspace, check=False)
             
-            commands = [
-                ["git", "init"],
-                ["git", "config", "user.email", "bot@luma.ai"],
-                ["git", "config", "user.name", "LUMA Bot"],
-                ["git", "add", "."],
-                ["git", "commit", "-m", "Initial commit", "--allow-empty"]
-            ]
-            
-            for cmd in commands:
-                result = subprocess.run(
-                    cmd,
-                    cwd=self.workspace,
-                    capture_output=True,
-                    text=True
-                )
-                if result.returncode != 0 and "nothing to commit" not in result.stdout:
-                    print(f"⚠️ Git command warning: {result.stderr}")
+        # ensure Clean state
+        subprocess.run(["git", "add", "."], cwd=self.workspace, check=False)
+        subprocess.run(["git", "commit", "-m", "Auto sync before run", "--allow-empty"], cwd=self.workspace, check=False)
