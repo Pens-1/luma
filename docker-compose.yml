@@ -32,6 +32,13 @@ services:
       - "11434:11434"
     volumes:
       - ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     networks:
       - default
 
@@ -43,6 +50,7 @@ services:
     environment:
       - REDIS_URL=redis://:redis_password@redis:6379
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - OLLAMA_MODEL=qwen3-coder:30b
     volumes:
       - ./shared:/app/shared:ro
     depends_on:
@@ -62,6 +70,7 @@ services:
       - WEATHER_API_KEY=${WEATHER_API_KEY}
     volumes:
       - ./shared:/app/shared:ro
+      - ./services/fast_service:/app:rw
       - ./services/fast_service/logs:/app/logs
     depends_on:
       redis:
